@@ -1,0 +1,1522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Modern Drive</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- jQuery -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+  <!-- SQLite.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <!-- PDF.js for PDF viewing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+  <style>
+    .file-item, .folder-item {
+      transition: all 0.2s ease;
+    }
+    .file-item:hover, .folder-item:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    }
+    .context-menu {
+      position: fixed;
+      z-index: 1000;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+    }
+    .context-menu ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .context-menu ul li {
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    .context-menu ul li:hover {
+      background: #f3f4f6;
+    }
+    .file-preview {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .file-preview-content {
+      background: white;
+      border-radius: 8px;
+      width: 80%;
+      height: 80%;
+      padding: 20px;
+      position: relative;
+      overflow: auto;
+    }
+    .file-preview-close {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      cursor: pointer;
+      font-size: 20px;
+    }
+    .drag-over {
+      background-color: rgba(59, 130, 246, 0.1);
+      border: 2px dashed #3b82f6;
+    }
+    .loader {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #3b82f6;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+      margin-right: 10px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .upload-progress {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      padding: 12px;
+      z-index: 999;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 font-sans">
+  <div class="flex h-screen overflow-hidden">
+    <!-- Sidebar -->
+    <div class="w-64 bg-white shadow-lg p-4 flex flex-col">
+      <div class="flex items-center space-x-2 p-2 mb-6">
+        <i class="fas fa-hard-drive text-blue-500 text-2xl"></i>
+        <h1 class="text-xl font-bold text-gray-800">Modern Drive</h1>
+      </div>
+      
+      <div class="space-y-4">
+        <button id="upload-btn" class="w-full py-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg flex items-center justify-center space-x-2 transition-colors">
+          <i class="fas fa-upload"></i>
+          <span>Upload Files</span>
+        </button>
+        
+        <div class="space-y-1">
+          <div class="flex items-center p-2 rounded-lg hover:bg-gray-100 cursor-pointer text-gray-700 font-medium folder-nav" data-path="">
+            <i class="fas fa-home mr-3 text-gray-500"></i>
+            <span>Home</span>
+          </div>
+          <div class="flex items-center p-2 rounded-lg hover:bg-gray-100 cursor-pointer text-gray-700 font-medium folder-nav" data-path="recent">
+            <i class="fas fa-clock mr-3 text-gray-500"></i>
+            <span>Recent</span>
+          </div>
+          <div class="flex items-center p-2 rounded-lg hover:bg-gray-100 cursor-pointer text-gray-700 font-medium folder-nav" data-path="starred">
+            <i class="fas fa-star mr-3 text-gray-500"></i>
+            <span>Starred</span>
+          </div>
+          <div class="flex items-center p-2 rounded-lg hover:bg-gray-100 cursor-pointer text-gray-700 font-medium folder-nav" data-path="trash">
+            <i class="fas fa-trash mr-3 text-gray-500"></i>
+            <span>Trash</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="mt-auto">
+        <div class="p-4 bg-blue-50 rounded-lg">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-medium text-gray-600">Storage</span>
+            <span class="text-xs text-gray-500" id="storage-text">Calculating...</span>
+          </div>
+          <div class="w-full bg-gray-200 rounded-full h-2">
+            <div id="storage-bar" class="bg-blue-500 h-2 rounded-full" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <!-- Header / Toolbar -->
+      <div class="p-4 bg-white shadow flex items-center justify-between">
+        <div class="flex items-center">
+          <div class="relative">
+            <input type="text" placeholder="Search drive..." class="pl-10 pr-4 py-2 bg-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all w-64">
+            <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+          </div>
+        </div>
+        
+        <div class="flex items-center space-x-4">
+          <button class="text-gray-500 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100 transition-colors" id="view-grid">
+            <i class="fas fa-th-large"></i>
+          </button>
+          <button class="text-gray-500 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100 transition-colors" id="view-list">
+            <i class="fas fa-list"></i>
+          </button>
+          <button class="text-gray-500 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100 transition-colors">
+            <i class="fas fa-cog"></i>
+          </button>
+          <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold">
+            U
+          </div>
+        </div>
+      </div>
+      
+      <!-- Path Navigation -->
+      <div class="px-6 py-3 bg-white border-b flex items-center text-sm">
+        <div class="breadcrumb flex items-center">
+          <span class="text-gray-500 cursor-pointer" data-path="">My Drive</span>
+          <div id="current-path"></div>
+        </div>
+      </div>
+      
+      <!-- File Display Area -->
+      <div class="flex-1 overflow-auto p-6" id="drive-content">
+        <!-- Drop zone for uploads -->
+        <div id="drop-zone" class="relative h-full w-full">
+          <!-- Files will be displayed here -->
+          <div id="files-container" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <!-- Files and folders will be displayed here -->
+          </div>
+          
+          <!-- Empty state -->
+          <div id="empty-state" class="hidden h-full flex flex-col items-center justify-center text-center p-8">
+            <div class="rounded-full bg-blue-100 p-6 mb-4">
+              <i class="fas fa-file-upload text-blue-500 text-4xl"></i>
+            </div>
+            <h3 class="text-xl font-semibold text-gray-700 mb-2">Drop files here to upload</h3>
+            <p class="text-gray-500 mb-4">or use the upload button</p>
+            <button id="empty-upload-btn" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg transition-colors">
+              Upload Files
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Context Menu -->
+  <div id="context-menu" class="context-menu hidden">
+    <ul>
+      <li id="menu-new-folder"><i class="fas fa-folder-plus mr-2"></i> New Folder</li>
+      <li id="menu-new-file"><i class="fas fa-file-plus mr-2"></i> New File</li>
+      <li id="menu-upload"><i class="fas fa-upload mr-2"></i> Upload</li>
+      <li class="border-t border-gray-200"></li>
+      <li id="menu-copy"><i class="fas fa-copy mr-2"></i> Copy</li>
+      <li id="menu-cut"><i class="fas fa-cut mr-2"></i> Cut</li>
+      <li id="menu-paste" class="hidden"><i class="fas fa-paste mr-2"></i> Paste</li>
+      <li class="border-t border-gray-200"></li>
+      <li id="menu-rename"><i class="fas fa-edit mr-2"></i> Rename</li>
+      <li id="menu-delete"><i class="fas fa-trash mr-2"></i> Delete</li>
+    </ul>
+  </div>
+  
+  <!-- New Folder Modal -->
+  <div id="new-folder-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-6 w-96">
+      <h3 class="text-lg font-semibold mb-4">Create New Folder</h3>
+      <input type="text" id="new-folder-name" placeholder="Folder name" class="w-full p-2 border border-gray-300 rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <div class="flex justify-end">
+        <button id="cancel-folder" class="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium mr-2">Cancel</button>
+        <button id="create-folder" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg">Create</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- New File Modal -->
+  <div id="new-file-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-6 w-96">
+      <h3 class="text-lg font-semibold mb-4">Create New File</h3>
+      <input type="text" id="new-file-name" placeholder="File name with extension" class="w-full p-2 border border-gray-300 rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <div class="flex justify-end">
+        <button id="cancel-file" class="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium mr-2">Cancel</button>
+        <button id="create-file" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg">Create</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- File Preview -->
+  <div id="file-preview" class="file-preview hidden">
+    <div class="file-preview-content">
+      <div class="file-preview-close"><i class="fas fa-times"></i></div>
+      <div id="file-preview-header" class="mb-4">
+        <h3 class="text-xl font-semibold"></h3>
+      </div>
+      <div id="file-preview-body"></div>
+    </div>
+  </div>
+  
+  <!-- Upload Progress -->
+  <div id="upload-progress" class="upload-progress hidden">
+    <div class="flex items-center mb-2">
+      <div class="loader"></div>
+      <span class="font-medium">Uploading files...</span>
+    </div>
+    <div id="upload-files"></div>
+  </div>
+  
+  <!-- Hidden file input for uploads -->
+  <input type="file" id="file-upload" class="hidden" multiple>
+
+  <script>
+    // Global variables
+    let db = null;
+    let SQL = null;
+    let currentPath = "";
+    let clipboard = null;
+    let viewMode = "grid"; // Default view mode
+    let dbInitialized = false;
+    
+    // Initialize SQLite - with better error handling
+    $(document).ready(function() {
+      console.log("Document ready, initializing SQLite...");
+      
+      initSqlJs({
+        locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+      }).then(function(sqlJs) {
+        console.log("SQL.js loaded successfully");
+        SQL = sqlJs;
+        db = new SQL.Database();
+        dbInitialized = true;
+        console.log("Database created");
+        
+        setupDatabase();
+        loadFilesAndFolders();
+        updateStorageInfo();
+      }).catch(err => {
+        console.error('Error initializing SQLite:', err);
+        alert('Failed to initialize the database: ' + err.message);
+      });
+    });
+    
+    // Setup database tables
+    function setupDatabase() {
+      console.log("Setting up database...");
+      
+      try {
+        db.run(`
+          CREATE TABLE IF NOT EXISTS folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            path TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(name, path)
+          )
+        `);
+        
+        db.run(`
+          CREATE TABLE IF NOT EXISTS files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            path TEXT NOT NULL,
+            type TEXT NOT NULL,
+            size INTEGER,
+            content BLOB,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(name, path)
+          )
+        `);
+        
+        console.log("Tables created successfully");
+        
+        // Insert demo data only if tables are empty
+        const checkFolders = db.exec("SELECT COUNT(*) as count FROM folders");
+        const checkFiles = db.exec("SELECT COUNT(*) as count FROM files");
+        
+        if (checkFolders[0].values[0][0] === 0 && checkFiles[0].values[0][0] === 0) {
+          console.log("Inserting demo data...");
+          
+          // Insert demo folders
+          const folderStmt = db.prepare("INSERT INTO folders (name, path) VALUES (?, ?)");
+          folderStmt.run(["Documents", ""]);
+          folderStmt.run(["Images", ""]);
+          folderStmt.run(["Videos", ""]);
+          folderStmt.free();
+          
+          // Insert demo files
+          const fileStmt = db.prepare("INSERT INTO files (name, path, type, size) VALUES (?, ?, ?, ?)");
+          fileStmt.run(["Welcome.txt", "", "text/plain", 256]);
+          fileStmt.run(["Getting-Started.pdf", "", "application/pdf", 1024]);
+          fileStmt.run(["Presentation.pptx", "", "application/vnd.openxmlformats-officedocument.presentationml.presentation", 2048]);
+          fileStmt.free();
+          
+          console.log("Demo data inserted successfully");
+        } else {
+          console.log("Demo data already exists, skipping insertion");
+        }
+      } catch (e) {
+        console.error("Error setting up database:", e);
+        alert("Database initialization error: " + e.message);
+      }
+    }
+    
+    // Load files and folders into the display
+    function loadFilesAndFolders() {
+      console.log(`Loading files and folders for path: ${currentPath}`);
+      
+      try {
+        if (!dbInitialized || !db) {
+          throw new Error("Database not initialized");
+        }
+        
+        const folders = [];
+        const files = [];
+        
+        // Get folders
+        try {
+          const folderStmt = db.prepare("SELECT * FROM folders WHERE path = ? ORDER BY name");
+          folderStmt.bind([currentPath]);
+          
+          while (folderStmt.step()) {
+            folders.push(folderStmt.getAsObject());
+          }
+          
+          folderStmt.free();
+          console.log(`Found ${folders.length} folders`);
+        } catch (e) {
+          console.error('Error loading folders:', e);
+        }
+        
+        // Get files
+        try {
+          const fileStmt = db.prepare("SELECT * FROM files WHERE path = ? ORDER BY name");
+          fileStmt.bind([currentPath]);
+          
+          while (fileStmt.step()) {
+            files.push(fileStmt.getAsObject());
+          }
+          
+          fileStmt.free();
+          console.log(`Found ${files.length} files`);
+        } catch (e) {
+          console.error('Error loading files:', e);
+        }
+        
+        displayFilesAndFolders(folders, files);
+        updateBreadcrumb();
+        updateStorageInfo();
+        
+        // Show empty state if needed
+        if (folders.length === 0 && files.length === 0) {
+          $("#empty-state").removeClass("hidden");
+        } else {
+          $("#empty-state").addClass("hidden");
+        }
+      } catch (e) {
+        console.error('Error in loadFilesAndFolders:', e);
+        alert('Error loading content: ' + e.message);
+        
+        // Show empty state with error message
+        $("#empty-state").removeClass("hidden");
+        $("#empty-state").html(`
+          <div class="rounded-full bg-red-100 p-6 mb-4">
+            <i class="fas fa-exclamation-triangle text-red-500 text-4xl"></i>
+          </div>
+          <h3 class="text-xl font-semibold text-red-700 mb-2">Error loading files</h3>
+          <p class="text-gray-500 mb-4">${e.message}</p>
+          <button id="empty-upload-btn" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-lg transition-colors">
+            Try Again
+          </button>
+        `);
+      }
+    }
+    
+    // Display the files and folders in the UI
+    function displayFilesAndFolders(folders, files) {
+      const container = $("#files-container");
+      container.empty();
+      
+      // Add folders
+      folders.forEach(folder => {
+        let folderElement;
+        
+        if (viewMode === "grid") {
+          folderElement = $(`
+            <div class="folder-item p-4 bg-white rounded-lg shadow-sm hover:shadow-md cursor-pointer" data-id="${folder.id}" data-name="${folder.name}">
+              <div class="flex flex-col items-center text-center">
+                <div class="w-16 h-16 mb-2 flex items-center justify-center text-yellow-500">
+                  <i class="fas fa-folder text-4xl"></i>
+                </div>
+                <span class="text-sm font-medium text-gray-700 truncate w-full">${folder.name}</span>
+              </div>
+            </div>
+          `);
+        } else {
+          folderElement = $(`
+            <div class="folder-item p-3 bg-white rounded-lg shadow-sm hover:shadow-md cursor-pointer mb-2" data-id="${folder.id}" data-name="${folder.name}">
+              <div class="flex items-center">
+                <div class="w-10 h-10 mr-3 flex items-center justify-center text-yellow-500">
+                  <i class="fas fa-folder text-2xl"></i>
+                </div>
+                <div class="flex-1">
+                  <span class="font-medium text-gray-700">${folder.name}</span>
+                  <div class="text-xs text-gray-500">Folder • ${formatDate(folder.created_at)}</div>
+                </div>
+              </div>
+            </div>
+          `);
+        }
+        
+        folderElement.on('dblclick', function() {
+          currentPath = currentPath ? `${currentPath}/${folder.name}` : folder.name;
+          loadFilesAndFolders();
+        });
+        
+        container.append(folderElement);
+      });
+      
+      // Add files
+      files.forEach(file => {
+        let icon = getFileIcon(file.name);
+        let fileElement;
+        
+        if (viewMode === "grid") {
+          fileElement = $(`
+            <div class="file-item p-4 bg-white rounded-lg shadow-sm hover:shadow-md cursor-pointer" data-id="${file.id}" data-name="${file.name}" data-type="${file.type}">
+              <div class="flex flex-col items-center text-center">
+                <div class="w-16 h-16 mb-2 flex items-center justify-center ${getIconColor(file.name)}">
+                  <i class="${icon} text-4xl"></i>
+                </div>
+                <span class="text-sm font-medium text-gray-700 truncate w-full">${file.name}</span>
+                <span class="text-xs text-gray-500">${formatSize(file.size)}</span>
+              </div>
+            </div>
+          `);
+        } else {
+          fileElement = $(`
+            <div class="file-item p-3 bg-white rounded-lg shadow-sm hover:shadow-md cursor-pointer mb-2" data-id="${file.id}" data-name="${file.name}" data-type="${file.type}">
+              <div class="flex items-center">
+                <div class="w-10 h-10 mr-3 flex items-center justify-center ${getIconColor(file.name)}">
+                  <i class="${icon} text-2xl"></i>
+                </div>
+                <div class="flex-1">
+                  <span class="font-medium text-gray-700">${file.name}</span>
+                  <div class="text-xs text-gray-500">${formatSize(file.size)} • ${formatDate(file.created_at)}</div>
+                </div>
+              </div>
+            </div>
+          `);
+        }
+        
+        fileElement.on('dblclick', function() {
+          openFile(file);
+        });
+        
+        container.append(fileElement);
+      });
+      
+      // Apply drag and drop functionality
+      applyDragAndDrop();
+      
+      // Update container layout based on view mode
+      if (viewMode === "list") {
+        container.removeClass("grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4");
+        container.addClass("flex flex-col space-y-0");
+      } else {
+        container.addClass("grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4");
+        container.removeClass("flex flex-col space-y-0");
+      }
+    }
+    
+    // Apply drag and drop functionality
+    function applyDragAndDrop() {
+      // Make folders droppable
+      $(".folder-item").each(function() {
+        const folder = $(this);
+        
+        folder.on('dragover', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          $(this).addClass("drag-over");
+        });
+        
+        folder.on('dragleave', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          $(this).removeClass("drag-over");
+        });
+        
+        folder.on('drop', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          $(this).removeClass("drag-over");
+          
+          const folderName = $(this).data('name');
+          const targetPath = currentPath ? `${currentPath}/${folderName}` : folderName;
+          
+          // Check if files were dropped
+          if (e.originalEvent.dataTransfer.files.length > 0) {
+            handleFileUpload(e.originalEvent.dataTransfer.files, targetPath);
+          } else {
+            // Check if item was dragged from drive
+            const draggedId = e.originalEvent.dataTransfer.getData('text/plain');
+            if (draggedId) {
+              moveItem(draggedId, targetPath);
+            }
+          }
+        });
+      });
+      
+      // Make files and folders draggable
+      $(".file-item, .folder-item").each(function() {
+        const item = $(this);
+        
+        item.attr('draggable', true);
+        
+        item.on('dragstart', function(e) {
+          const id = $(this).data('id');
+          const isFolder = $(this).hasClass('folder-item');
+          e.originalEvent.dataTransfer.setData('text/plain', `${isFolder ? 'folder' : 'file'}-${id}`);
+          e.originalEvent.dataTransfer.effectAllowed = 'move';
+        });
+      });
+      
+      // Make the main container droppable for files
+      $("#drop-zone").on('dragover', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        $(this).addClass("drag-over");
+      });
+      
+      $("#drop-zone").on('dragleave', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        $(this).removeClass("drag-over");
+      });
+      
+      $("#drop-zone").on('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        $(this).removeClass("drag-over");
+        
+        if (e.originalEvent.dataTransfer.files.length > 0) {
+          handleFileUpload(e.originalEvent.dataTransfer.files);
+        }
+      });
+    }
+    
+    // Handle file upload
+    function handleFileUpload(files, targetPath = currentPath) {
+      const uploadProgress = $("#upload-progress");
+      const uploadFiles = $("#upload-files");
+      
+      uploadProgress.removeClass("hidden");
+      uploadFiles.empty();
+      
+      console.log(`Uploading ${files.length} files to path: ${targetPath}`);
+      
+      if (!dbInitialized || !db) {
+        const notification = $(`
+          <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 fixed bottom-4 right-4 rounded shadow-lg" style="z-index: 9999;">
+            <div class="flex">
+              <div class="py-1"><i class="fas fa-exclamation-triangle text-red-500 mr-3"></i></div>
+              <div>
+                <p class="font-bold">Error</p>
+                <p>Database is not ready. Please try again in a moment.</p>
+              </div>
+            </div>
+          </div>
+        `);
+        
+        $("body").append(notification);
+        setTimeout(() => { notification.fadeOut(500, function() { $(this).remove(); }); }, 3000);
+        
+        uploadProgress.addClass("hidden");
+        return;
+      }
+      
+      let processedCount = 0;
+      
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const reader = new FileReader();
+        
+        console.log(`Processing file: ${file.name}, size: ${formatSize(file.size)}, type: ${file.type}`);
+        
+        // Create progress element
+        const progressElement = $(`
+          <div class="mb-3 bg-white p-3 rounded-lg shadow-sm">
+            <div class="flex justify-between text-sm mb-1">
+              <span class="truncate max-w-xs font-medium">${file.name}</span>
+              <span class="text-gray-600">${formatSize(file.size)}</span>
+            </div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-gray-500">${file.type.split('/')[1] || file.type}</span>
+              <span class="progress-percent">0%</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-2">
+              <div class="bg-blue-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+          </div>
+        `);
+        
+        uploadFiles.append(progressElement);
+        
+        // Set up progress tracking
+        reader.onloadstart = function() {
+          console.log(`Started reading file: ${file.name}`);
+        };
+        
+        // For larger files, this will update during the read process
+        reader.onprogress = function(e) {
+          if (e.lengthComputable) {
+            const percentLoaded = Math.round((e.loaded / e.total) * 100);
+            console.log(`Upload progress for ${file.name}: ${percentLoaded}%`);
+            progressElement.find(".progress-percent").text(percentLoaded + "%");
+            progressElement.find(".bg-blue-500").css("width", percentLoaded + "%");
+          }
+        };
+        
+        reader.onerror = function() {
+          console.error(`Error reading file: ${file.name}`);
+          progressElement.find(".progress-percent").text("Error");
+          progressElement.find(".bg-blue-500").addClass("bg-red-500").removeClass("bg-blue-500");
+          
+          // Show error notification
+          const notification = $(`
+            <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 fixed bottom-4 right-4 rounded shadow-lg" style="z-index: 9999;">
+              <div class="flex">
+                <div class="py-1"><i class="fas fa-exclamation-triangle text-red-500 mr-3"></i></div>
+                <div>
+                  <p class="font-bold">Error</p>
+                  <p>Failed to upload "${file.name}": ${reader.error ? reader.error.message : 'Unknown error'}</p>
+                </div>
+              </div>
+            </div>
+          `);
+          
+          $("body").append(notification);
+          setTimeout(() => { notification.fadeOut(500, function() { $(this).remove(); }); }, 3000);
+          
+          processedCount++;
+          if (processedCount === files.length) {
+            finishUpload();
+          }
+        };
+        
+        reader.onload = function(e) {
+          console.log(`Finished reading file: ${file.name}, size: ${e.target.result.byteLength} bytes`);
+          progressElement.find(".progress-percent").text("100%");
+          progressElement.find(".bg-blue-500").css("width", "100%");
+          
+          try {
+            // Handle the file data - for small files, SQLite can store them directly
+            // For larger files, we'll save metadata only
+            let fileData = null;
+            if (e.target.result.byteLength < 50000000) { // 50MB limit
+              fileData = new Uint8Array(e.target.result);
+            }
+            
+            saveFile(file.name, targetPath, file.type, file.size, fileData);
+          } catch (error) {
+            console.error(`Error processing file data: ${error.message}`);
+            progressElement.find(".progress-percent").text("Error");
+            progressElement.find(".bg-blue-500").addClass("bg-red-500").removeClass("bg-blue-500");
+            
+            // Show error notification
+            const notification = $(`
+              <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 fixed bottom-4 right-4 rounded shadow-lg" style="z-index: 9999;">
+                <div class="flex">
+                  <div class="py-1"><i class="fas fa-exclamation-triangle text-red-500 mr-3"></i></div>
+                  <div>
+                    <p class="font-bold">Error</p>
+                    <p>Failed to process "${file.name}": ${error.message}</p>
+                  </div>
+                </div>
+              </div>
+            `);
+            
+            $("body").append(notification);
+            setTimeout(() => { notification.fadeOut(500, function() { $(this).remove(); }); }, 3000);
+          }
+          
+          processedCount++;
+          if (processedCount === files.length) {
+            finishUpload();
+          }
+        };
+        
+        // Use appropriate method based on file type
+        try {
+          if (file.type.startsWith('text/') || 
+              file.type.includes('json') || 
+              file.type.includes('javascript')) {
+            reader.readAsText(file);
+          } else {
+            reader.readAsArrayBuffer(file);
+          }
+        } catch (e) {
+          console.error(`Error starting file read: ${e.message}`);
+          reader.onerror();
+        }
+      }
+      
+      function finishUpload() {
+        console.log("All files processed");
+        
+        // Show success notification if at least one file was successfully processed
+        const notification = $(`
+          <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 fixed bottom-4 right-4 rounded shadow-lg" style="z-index: 9999;">
+            <div class="flex">
+              <div class="py-1"><i class="fas fa-check-circle text-green-500 mr-3"></i></div>
+              <div>
+                <p class="font-bold">Upload Complete</p>
+                <p>${processedCount} ${processedCount === 1 ? 'file' : 'files'} processed.</p>
+              </div>
+            </div>
+          </div>
+        `);
+        
+        $("body").append(notification);
+        setTimeout(() => { notification.fadeOut(500, function() { $(this).remove(); }); }, 3000);
+        
+        setTimeout(() => {
+          uploadProgress.addClass("hidden");
+          loadFilesAndFolders();
+        }, 1000);
+      }
+    }
+    
+    // Save file to database
+    function saveFile(name, path, type, size, content) {
+      try {
+        if (!dbInitialized || !db) {
+          throw new Error("Database not initialized");
+        }
+        
+        console.log(`Saving file: ${name}, path: ${path}, type: ${type}, size: ${size} bytes`);
+        
+        // First, check if file already exists
+        const checkStmt = db.prepare("SELECT id FROM files WHERE name = ? AND path = ?");
+        checkStmt.bind([name, path]);
+        const exists = checkStmt.step();
+        checkStmt.free();
+        
+        let result;
+        if (exists) {
+          console.log(`File already exists, updating: ${name}`);
+          const updateStmt = db.prepare("UPDATE files SET type = ?, size = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ? AND path = ?");
+          result = updateStmt.run([type, size, content, name, path]);
+          updateStmt.free();
+        } else {
+          console.log(`Creating new file: ${name}`);
+          const insertStmt = db.prepare("INSERT INTO files (name, path, type, size, content) VALUES (?, ?, ?, ?, ?)");
+          result = insertStmt.run([name, path, type, size, content]);
+          insertStmt.free();
+        }
+        
+        // Update storage info after saving
+        updateStorageInfo();
+        
+        console.log("File saved successfully:", result);
+        return true;
+      } catch (e) {
+        console.error('Error saving file:', e);
+        
+        // Show error notification
+        const notification = $(`
+          <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 fixed bottom-4 right-4 rounded shadow-lg" style="z-index: 9999;">
+            <div class="flex">
+              <div class="py-1"><i class="fas fa-exclamation-triangle text-red-500 mr-3"></i></div>
+              <div>
+                <p class="font-bold">Error</p>
+                <p>Failed to save file "${name}": ${e.message}</p>
+              </div>
+            </div>
+          </div>
+        `);
+        
+        $("body").append(notification);
+        setTimeout(() => { notification.fadeOut(500, function() { $(this).remove(); }); }, 3000);
+        
+        return false;
+      }
+    }
+    
+    // Get actual storage information from browser
+    function updateStorageInfo() {
+      console.log("Updating storage info...");
+      
+      // Calculate DB size from files table
+      let totalSize = 0;
+      let usedSize = 0;
+      
+      try {
+        if (dbInitialized && db) {
+          const sizeQuery = db.exec("SELECT SUM(size) as total FROM files");
+          if (sizeQuery && sizeQuery[0] && sizeQuery[0].values && sizeQuery[0].values[0]) {
+            usedSize = sizeQuery[0].values[0][0] || 0;
+          }
+        }
+        
+        // Try to get storage estimate from browser API
+        if (navigator.storage && navigator.storage.estimate) {
+          navigator.storage.estimate().then(estimate => {
+            totalSize = estimate.quota || 1000000000; // Default to 1GB if quota is not available
+            const usagePercent = Math.min(100, Math.max(0, Math.round((usedSize / totalSize) * 100)));
+            
+            $("#storage-text").text(`${formatSize(usedSize)} / ${formatSize(totalSize)}`);
+            $("#storage-bar").css("width", `${usagePercent}%`);
+            
+            console.log(`Storage updated: ${formatSize(usedSize)} / ${formatSize(totalSize)} (${usagePercent}%)`);
+          }).catch(err => {
+            console.error('Error getting storage estimate:', err);
+            fallbackStorageDisplay(usedSize);
+          });
+        } else {
+          fallbackStorageDisplay(usedSize);
+        }
+      } catch (e) {
+        console.error('Error calculating storage:', e);
+        fallbackStorageDisplay(0);
+      }
+    }
+    
+    // Display storage info with fallback values
+    function fallbackStorageDisplay(usedSize) {
+      const totalSize = 5000000000; // Default to 5GB
+      const usagePercent = Math.min(100, Math.max(0, Math.round((usedSize / totalSize) * 100)));
+      
+      $("#storage-text").text(`${formatSize(usedSize)} / ${formatSize(totalSize)}`);
+      $("#storage-bar").css("width", `${usagePercent}%`);
+      
+      console.log(`Fallback storage display: ${formatSize(usedSize)} / ${formatSize(totalSize)} (${usagePercent}%)`);
+    }
+    
+    // Create a new folder
+    function createFolder(name, path = currentPath) {
+      if (!name || name.trim() === '') {
+        alert('Please enter a valid folder name');
+        return;
+      }
+      
+      console.log(`Creating folder: ${name} at path: ${path}`);
+      
+      try {
+        const stmt = db.prepare("INSERT INTO folders (name, path) VALUES (?, ?)");
+        stmt.run([name, path]);
+        stmt.free();
+        
+        console.log("Folder created successfully");
+        
+        // Notify user
+        const notification = $(`
+          <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 fixed bottom-4 right-4 rounded shadow-lg" style="z-index: 9999;">
+            <div class="flex">
+              <div class="py-1"><i class="fas fa-check-circle text-green-500 mr-3"></i></div>
+              <div>
+                <p class="font-bold">Success</p>
+                <p>Folder "${name}" created successfully.</p>
+              </div>
+            </div>
+          </div>
+        `);
+        
+        $("body").append(notification);
+        setTimeout(() => { notification.fadeOut(500, function() { $(this).remove(); }); }, 3000);
+        
+        loadFilesAndFolders();
+      } catch (e) {
+        console.error('Error creating folder:', e);
+        alert('Error creating folder: ' + e.message);
+      }
+    }
+    
+    // Create a new file
+    function createFile(name, path = currentPath) {
+      if (!name || name.trim() === '') {
+        alert('Please enter a valid file name');
+        return;
+      }
+      
+      console.log(`Creating file: ${name} at path: ${path}`);
+      
+      try {
+        let type = "text/plain";
+        const extension = name.split('.').pop().toLowerCase();
+        
+        // Set type based on extension
+        if (extension === 'pdf') type = 'application/pdf';
+        else if (extension === 'doc' || extension === 'docx') type = 'application/msword';
+        else if (extension === 'xls' || extension === 'xlsx') type = 'application/vnd.ms-excel';
+        else if (extension === 'ppt' || extension === 'pptx') type = 'application/vnd.ms-powerpoint';
+        else if (extension === 'jpg' || extension === 'jpeg') type = 'image/jpeg';
+        else if (extension === 'png') type = 'image/png';
+        else if (extension === 'gif') type = 'image/gif';
+        else if (extension === 'mp4') type = 'video/mp4';
+        else if (extension === 'mp3') type = 'audio/mp3';
+        
+        // Create empty content for text files
+        let content = null;
+        if (type === 'text/plain') {
+          content = new Uint8Array(0);
+        }
+        
+        const stmt = db.prepare("INSERT INTO files (name, path, type, size, content) VALUES (?, ?, ?, ?, ?)");
+        stmt.run([name, path, type, 0, content]);
+        stmt.free();
+        
+        console.log("File created successfully");
+        
+        // Notify user
+        const notification = $(`
+          <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 fixed bottom-4 right-4 rounded shadow-lg" style="z-index: 9999;">
+            <div class="flex">
+              <div class="py-1"><i class="fas fa-check-circle text-green-500 mr-3"></i></div>
+              <div>
+                <p class="font-bold">Success</p>
+                <p>File "${name}" created successfully.</p>
+              </div>
+            </div>
+          </div>
+        `);
+        
+        $("body").append(notification);
+        setTimeout(() => { notification.fadeOut(500, function() { $(this).remove(); }); }, 3000);
+        
+        loadFilesAndFolders();
+      } catch (e) {
+        console.error('Error creating file:', e);
+        alert('Error creating file: ' + e.message);
+      }
+    }
+    
+    // Move item to a new path
+    function moveItem(idString, targetPath) {
+      const [type, id] = idString.split('-');
+      
+      if (type === 'folder') {
+        const stmt = db.prepare("UPDATE folders SET path = ? WHERE id = ?");
+        stmt.bind([targetPath, id]);
+        stmt.step();
+        stmt.free();
+      } else {
+        const stmt = db.prepare("UPDATE files SET path = ? WHERE id = ?");
+        stmt.bind([targetPath, id]);
+        stmt.step();
+        stmt.free();
+      }
+      
+      loadFilesAndFolders();
+    }
+    
+    // Delete an item
+    function deleteItem(idString) {
+      const [type, id] = idString.split('-');
+      
+      if (type === 'folder') {
+        // First check if folder is empty
+        const checkStmt = db.prepare(`
+          SELECT COUNT(*) as count FROM folders WHERE path = (SELECT path || '/' || name FROM folders WHERE id = ?)
+          UNION ALL
+          SELECT COUNT(*) as count FROM files WHERE path = (SELECT path || '/' || name FROM folders WHERE id = ?)
+        `);
+        checkStmt.bind([id, id]);
+        
+        let count = 0;
+        while (checkStmt.step()) {
+          count += checkStmt.getAsObject().count;
+        }
+        checkStmt.free();
+        
+        if (count > 0) {
+          if (!confirm("This folder contains items. Delete anyway?")) {
+            return;
+          }
+          
+          // Get folder path and name
+          const pathStmt = db.prepare("SELECT path, name FROM folders WHERE id = ?");
+          pathStmt.bind([id]);
+          pathStmt.step();
+          const folder = pathStmt.getAsObject();
+          pathStmt.free();
+          
+          const folderPath = folder.path ? `${folder.path}/${folder.name}` : folder.name;
+          
+          // Delete all files and subfolders recursively
+          deleteRecursively(folderPath);
+        }
+        
+        const stmt = db.prepare("DELETE FROM folders WHERE id = ?");
+        stmt.bind([id]);
+        stmt.step();
+        stmt.free();
+      } else {
+        const stmt = db.prepare("DELETE FROM files WHERE id = ?");
+        stmt.bind([id]);
+        stmt.step();
+        stmt.free();
+      }
+      
+      loadFilesAndFolders();
+    }
+    
+    // Delete folder contents recursively
+    function deleteRecursively(path) {
+      // Delete subfolders
+      const folderStmt = db.prepare("SELECT id, path, name FROM folders WHERE path = ?");
+      folderStmt.bind([path]);
+      
+      while (folderStmt.step()) {
+        const subfolder = folderStmt.getAsObject();
+        const subfolderPath = subfolder.path ? `${subfolder.path}/${subfolder.name}` : subfolder.name;
+        deleteRecursively(subfolderPath);
+        
+        const deleteStmt = db.prepare("DELETE FROM folders WHERE id = ?");
+        deleteStmt.bind([subfolder.id]);
+        deleteStmt.step();
+        deleteStmt.free();
+      }
+      
+      folderStmt.free();
+      
+      // Delete files
+      const fileStmt = db.prepare("DELETE FROM files WHERE path = ?");
+      fileStmt.bind([path]);
+      fileStmt.step();
+      fileStmt.free();
+    }
+    
+    // Rename an item
+    function renameItem(idString, newName) {
+      const [type, id] = idString.split('-');
+      
+      if (type === 'folder') {
+        const stmt = db.prepare("UPDATE folders SET name = ? WHERE id = ?");
+        stmt.bind([newName, id]);
+        stmt.step();
+        stmt.free();
+      } else {
+        const stmt = db.prepare("UPDATE files SET name = ? WHERE id = ?");
+        stmt.bind([newName, id]);
+        stmt.step();
+        stmt.free();
+      }
+      
+      loadFilesAndFolders();
+    }
+    
+    // Open a file
+    function openFile(file) {
+      const preview = $("#file-preview");
+      const header = $("#file-preview-header h3");
+      const body = $("#file-preview-body");
+      
+      header.text(file.name);
+      body.empty();
+      
+      // Get file content if needed
+      const contentStmt = db.prepare("SELECT content FROM files WHERE id = ?");
+      contentStmt.bind([file.id]);
+      contentStmt.step();
+      const content = contentStmt.getAsObject().content;
+      contentStmt.free();
+      
+      if (file.type.startsWith('image/')) {
+        // Display image
+        const blob = new Blob([content], { type: file.type });
+        const url = URL.createObjectURL(blob);
+        body.html(`<img src="${url}" class="max-w-full max-h-full mx-auto" />`);
+      } else if (file.type === 'application/pdf') {
+        // Display PDF
+        const blob = new Blob([content], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        body.html(`<iframe src="${url}" class="w-full h-full border-0"></iframe>`);
+      } else if (file.type === 'text/plain') {
+        // Display text
+        let text = '';
+        if (content) {
+          const decoder = new TextDecoder();
+          text = decoder.decode(content);
+        }
+        body.html(`<textarea class="w-full h-full p-4 border rounded-lg">${text}</textarea>`);
+      } else if (file.type.includes('msword') || file.type.includes('openxmlformats')) {
+        // Display message for Word documents
+        body.html(`<div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p>Preview for ${file.name} is not available. Download the file to view its contents.</p>
+        </div>`);
+      } else {
+        // Generic file info
+        body.html(`<div class="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+          <p>File: ${file.name}</p>
+          <p>Type: ${file.type}</p>
+          <p>Size: ${formatSize(file.size)}</p>
+        </div>`);
+      }
+      
+      preview.removeClass("hidden");
+    }
+    
+    // Update breadcrumb navigation
+    function updateBreadcrumb() {
+      const pathContainer = $("#current-path");
+      pathContainer.empty();
+      
+      if (currentPath) {
+        const parts = currentPath.split('/');
+        let currentPathSoFar = '';
+        
+        parts.forEach((part, index) => {
+          currentPathSoFar = currentPathSoFar ? `${currentPathSoFar}/${part}` : part;
+          
+          pathContainer.append(`
+            <span class="mx-2 text-gray-400">/</span>
+            <span class="text-gray-700 cursor-pointer" data-path="${currentPathSoFar}">${part}</span>
+          `);
+        });
+        
+        // Add click event to breadcrumb items
+        pathContainer.find("span[data-path]").on('click', function() {
+          currentPath = $(this).data('path');
+          loadFilesAndFolders();
+        });
+      }
+    }
+    
+    // Get file icon based on extension
+    function getFileIcon(filename) {
+      const extension = filename.split('.').pop().toLowerCase();
+      
+      switch (extension) {
+        case 'pdf':
+          return 'fas fa-file-pdf';
+        case 'doc':
+        case 'docx':
+          return 'fas fa-file-word';
+        case 'xls':
+        case 'xlsx':
+          return 'fas fa-file-excel';
+        case 'ppt':
+        case 'pptx':
+          return 'fas fa-file-powerpoint';
+        case 'jpg':
+        case 'jpeg':
+        case 'png':
+        case 'gif':
+          return 'fas fa-file-image';
+        case 'mp3':
+        case 'wav':
+          return 'fas fa-file-audio';
+        case 'mp4':
+        case 'mov':
+          return 'fas fa-file-video';
+        case 'zip':
+        case 'rar':
+          return 'fas fa-file-archive';
+        case 'txt':
+          return 'fas fa-file-alt';
+        case 'html':
+        case 'css':
+        case 'js':
+          return 'fas fa-file-code';
+        default:
+          return 'fas fa-file';
+      }
+    }
+    
+    // Get icon color based on file type
+    function getIconColor(filename) {
+      const extension = filename.split('.').pop().toLowerCase();
+      
+      switch (extension) {
+        case 'pdf':
+          return 'text-red-500';
+        case 'doc':
+        case 'docx':
+          return 'text-blue-500';
+        case 'xls':
+        case 'xlsx':
+          return 'text-green-500';
+        case 'ppt':
+        case 'pptx':
+          return 'text-orange-500';
+        case 'jpg':
+        case 'jpeg':
+        case 'png':
+        case 'gif':
+          return 'text-purple-500';
+        case 'mp3':
+        case 'wav':
+          return 'text-yellow-500';
+        case 'mp4':
+        case 'mov':
+          return 'text-indigo-500';
+        case 'zip':
+        case 'rar':
+          return 'text-yellow-600';
+        default:
+          return 'text-gray-500';
+      }
+    }
+    
+    // Format file size
+    function formatSize(bytes) {
+      if (!bytes) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
+    // Format date
+    function formatDate(dateString) {
+      if (!dateString) return '';
+      const date = new Date(dateString);
+      return date.toLocaleDateString();
+    }
+    
+    // Event Handlers
+    $(document).ready(function() {
+      // Handle context menu
+      $(document).on('contextmenu', function(e) {
+        e.preventDefault();
+        
+        const contextMenu = $("#context-menu");
+        const x = e.pageX;
+        const y = e.pageY;
+        
+        // Position the menu
+        contextMenu.css({
+          top: y + 'px',
+          left: x + 'px'
+        });
+        
+        // Show menu
+        contextMenu.removeClass("hidden");
+        
+        // Set target for menu actions
+        const target = $(e.target).closest('.file-item, .folder-item');
+        if (target.length) {
+          contextMenu.data('target', target);
+          
+          // Show/hide rename and delete options
+          $("#menu-rename, #menu-delete").show();
+        } else {
+          contextMenu.data('target', null);
+          
+          // Hide rename and delete options when right-clicking empty space
+          $("#menu-rename, #menu-delete").hide();
+        }
+        
+        // Show paste option if clipboard has data
+        if (clipboard) {
+          $("#menu-paste").removeClass("hidden");
+        } else {
+          $("#menu-paste").addClass("hidden");
+        }
+      });
+      
+      // Hide context menu when clicking elsewhere
+      $(document).on('click', function() {
+        $("#context-menu").addClass("hidden");
+      });
+      
+      // New Folder option
+      $("#menu-new-folder").on('click', function() {
+        $("#new-folder-modal").removeClass("hidden");
+        $("#new-folder-name").focus();
+      });
+      
+      // New File option
+      $("#menu-new-file").on('click', function() {
+        $("#new-file-modal").removeClass("hidden");
+        $("#new-file-name").focus();
+      });
+      
+      // Upload option
+      $("#menu-upload, #upload-btn, #empty-upload-btn").on('click', function() {
+        $("#file-upload").click();
+      });
+      
+      // Handle file selection for upload
+      $("#file-upload").on('change', function(e) {
+        if (e.target.files.length > 0) {
+          handleFileUpload(e.target.files);
+        }
+      });
+      
+      // Copy option
+      $("#menu-copy").on('click', function() {
+        const target = $("#context-menu").data('target');
+        if (target) {
+          const id = target.data('id');
+          const name = target.data('name');
+          const isFolder = target.hasClass('folder-item');
+          
+          clipboard = {
+            id: `${isFolder ? 'folder' : 'file'}-${id}`,
+            name: name,
+            action: 'copy'
+          };
+        }
+      });
+      
+      // Cut option
+      $("#menu-cut").on('click', function() {
+        const target = $("#context-menu").data('target');
+        if (target) {
+          const id = target.data('id');
+          const name = target.data('name');
+          const isFolder = target.hasClass('folder-item');
+          
+          clipboard = {
+            id: `${isFolder ? 'folder' : 'file'}-${id}`,
+            name: name,
+            action: 'cut'
+          };
+        }
+      });
+      
+      // Paste option
+      $("#menu-paste").on('click', function() {
+        if (clipboard) {
+          if (clipboard.action === 'cut') {
+            moveItem(clipboard.id, currentPath);
+          } else {
+            // Copy operation - not implemented yet
+            alert('Copy operation is not implemented yet');
+          }
+          
+          clipboard = null;
+        }
+      });
+      
+      // Rename option
+      $("#menu-rename").on('click', function() {
+        const target = $("#context-menu").data('target');
+        if (target) {
+          const newName = prompt("Enter new name:", target.data('name'));
+          if (newName && newName !== target.data('name')) {
+            const id = target.data('id');
+            const isFolder = target.hasClass('folder-item');
+            renameItem(`${isFolder ? 'folder' : 'file'}-${id}`, newName);
+          }
+        }
+      });
+      
+      // Delete option
+      $("#menu-delete").on('click', function() {
+        const target = $("#context-menu").data('target');
+        if (target) {
+          if (confirm("Are you sure you want to delete this item?")) {
+            const id = target.data('id');
+            const isFolder = target.hasClass('folder-item');
+            deleteItem(`${isFolder ? 'folder' : 'file'}-${id}`);
+          }
+        }
+      });
+      
+      // Create folder
+      $("#create-folder").on('click', function() {
+        const name = $("#new-folder-name").val().trim();
+        if (name) {
+          if (!dbInitialized || !db) {
+            alert("Database is not ready yet. Please try again in a moment.");
+            return;
+          }
+          createFolder(name);
+          $("#new-folder-modal").addClass("hidden");
+          $("#new-folder-name").val('');
+        } else {
+          alert("Please enter a folder name");
+        }
+      });
+      
+      // Cancel folder creation
+      $("#cancel-folder").on('click', function() {
+        $("#new-folder-modal").addClass("hidden");
+        $("#new-folder-name").val('');
+      });
+      
+      // Create file
+      $("#create-file").on('click', function() {
+        const name = $("#new-file-name").val().trim();
+        if (name) {
+          if (!dbInitialized || !db) {
+            alert("Database is not ready yet. Please try again in a moment.");
+            return;
+          }
+          createFile(name);
+          $("#new-file-modal").addClass("hidden");
+          $("#new-file-name").val('');
+        } else {
+          alert("Please enter a file name");
+        }
+      });
+      
+      // Cancel file creation
+      $("#cancel-file").on('click', function() {
+        $("#new-file-modal").addClass("hidden");
+        $("#new-file-name").val('');
+      });
+      
+      // Close file preview
+      $(".file-preview-close").on('click', function() {
+        $("#file-preview").addClass("hidden");
+      });
+      
+      // Navigate to home
+      $(".folder-nav[data-path='']").on('click', function() {
+        currentPath = '';
+        loadFilesAndFolders();
+      });
+      
+      // Switch to grid view
+      $("#view-grid").on('click', function() {
+        viewMode = "grid";
+        loadFilesAndFolders();
+      });
+      
+      // Switch to list view
+      $("#view-list").on('click', function() {
+        viewMode = "list";
+        loadFilesAndFolders();
+      });
+      
+      // Handle keyboard shortcuts
+      $(document).on('keydown', function(e) {
+        // Escape key to close modals
+        if (e.key === 'Escape') {
+          $("#new-folder-modal, #new-file-modal, #file-preview").addClass("hidden");
+          $("#context-menu").addClass("hidden");
+        }
+        
+        // Enter key to confirm modals
+        if (e.key === 'Enter') {
+          if (!$("#new-folder-modal").hasClass("hidden")) {
+            $("#create-folder").click();
+          } else if (!$("#new-file-modal").hasClass("hidden")) {
+            $("#create-file").click();
+          }
+        }
+        
+        // Delete key to delete selected item
+        if (e.key === 'Delete') {
+          const selected = $(".file-item.selected, .folder-item.selected");
+          if (selected.length) {
+            if (confirm("Are you sure you want to delete the selected item?")) {
+              const id = selected.data('id');
+              const isFolder = selected.hasClass('folder-item');
+              deleteItem(`${isFolder ? 'folder' : 'file'}-${id}`);
+            }
+          }
+        }
+      });
+    });
+  </script>
+</body>
+</html>
